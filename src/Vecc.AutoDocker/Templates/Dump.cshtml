@@ -1,0 +1,42 @@
+﻿@using Vecc.AutoDocker.Extensions
+@model Vecc.AutoDocker.SwarmInformation
+@{
+    var idWidth = 15;
+    var nameWidth = 20;
+    var imageWidth = 50;
+    var nodeWidth = 10;
+    var desiredWidth = 10;
+    var currentWidth = 10;
+    var errorWidth = 20;
+}
+@("ID".PadMax(idWidth)) @("NAME".PadMax(nameWidth)) @("IMAGE".PadMax(imageWidth)) @("NODE".PadMax(nodeWidth)) @("DESIRED STATE".PadMax(desiredWidth)) @("CURRENT STATE".PadMax(currentWidth)) @("ERROR".PadMax(errorWidth)) PORTS
+@{
+    foreach (var task in Model.SwarmTasks)
+    {
+        var service = Model.GetServiceForTask(task);
+        var node = Model.GetNodeForTask(task);
+
+<TEXT>@task.Id.PadMax(idWidth) @service.Spec.Name.PadMax(nameWidth) @service.Spec.Labels["com.docker.stack.image"].PadMax(imageWidth) @node.Description.Hostname.PadMax(nodeWidth) @task.DesiredState.ToString().PadMax(desiredWidth) @task.Status.State.ToString().PadMax(currentWidth) @((task.Status.Err ?? string.Empty).PadMax(errorWidth))
+</TEXT>
+    }
+}
+
+@("ID".PadMax(idWidth)) @("NAME".PadMax(nameWidth)) @("NODE".PadMax(nodeWidth)) @("IMAGE".PadMax(imageWidth)) IP ADDRESSES
+@{
+    foreach (var task in Model.SwarmTasks)
+    {
+        var service = Model.GetServiceForTask(task);
+        var node = Model.GetNodeForTask(task);
+        var ips = new List<string>();
+        foreach (var attachment in task.NetworksAttachments)
+        {
+            foreach (var address in attachment.Addresses)
+            {
+                ips.Add(address);
+            }
+        }
+
+<TEXT>@task.Id.PadMax(idWidth) @((service.Spec.Name + "." + task.Slot).PadMax(nameWidth)) @node.Description.Hostname.PadMax(nodeWidth) @service.Spec.Labels["com.docker.stack.image"].PadMax(imageWidth) @string.Join(',', ips)
+</TEXT>
+    }
+}
