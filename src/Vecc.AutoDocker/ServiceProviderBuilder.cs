@@ -14,6 +14,7 @@ using Microsoft.Extensions.Options;
 using Serilog;
 using Vecc.AutoDocker.Client;
 using Vecc.AutoDocker.Client.Internal;
+using Vecc.AutoDocker.Config;
 using Vecc.AutoDocker.Internal;
 
 namespace Vecc.AutoDocker
@@ -31,10 +32,12 @@ namespace Vecc.AutoDocker
                 .Build();
 
             services.Configure<DockerClientOptions>(configuration.GetSection(typeof(DockerClientOptions).FullName));
+            services.Configure<AutoDockerConfiguration>(configuration.GetSection(typeof(AutoDockerConfiguration).FullName));
+
             services.AddLogging(builder =>
             {
                 var serilogBuilder = new LoggerConfiguration()
-                    .WriteTo.Console();
+                    .WriteTo.Console(new Serilog.Formatting.Json.JsonFormatter(renderMessage: true));
                 var logger = serilogBuilder.CreateLogger();
 
                 builder.AddSerilog(logger);
@@ -48,9 +51,10 @@ namespace Vecc.AutoDocker
             services.AddDockerServiceClient<IDockerTaskClient, DefaultDockerTaskClient>();
 
             services.AddSingleton<RazorRunner>();
+            services.AddSingleton<Monitor>();
             services.AddTransient<IDockerClients, DefaultDockerClients>();
 
-            services.AddRazor();
+            services.AddRazor(configuration);
 
 
             return services.BuildServiceProvider();
@@ -93,7 +97,7 @@ namespace Vecc.AutoDocker
             client.BaseAddress = new Uri(options.Value.Host);
         }
 
-        private static IServiceCollection AddRazor(this IServiceCollection services)
+        private static IServiceCollection AddRazor(this IServiceCollection services, IConfiguration configuration)
         {
             var hostingEnvironment = new HostingEnvironment
             {
@@ -109,17 +113,23 @@ namespace Vecc.AutoDocker
                     {
                         options.AllowRecompilingViewsOnFileChange = true;
                         options.FileProviders.Clear();
-                        options.FileProviders.Add(GetPhysicalFileProvider());
+                        options.FileProviders.Add(GetPhysicalFileProvider(configuration));
                     });
 
             return services;
         }
 
-        private static IFileProvider GetPhysicalFileProvider()
+        private static IFileProvider GetPhysicalFileProvider(IConfiguration configuration)
         {
-            var libraryPath = typeof(Program).Assembly.Location;
-            var library = new FileInfo(libraryPath);
-            var root = library.DirectoryName;
+            var options = configuration.GetSection(typeof(AutoDockerConfiguration).FullName).Get<AutoDockerConfiguration>();
+            var root = options.TemplateRootPath;
+
+            if (string.IsNullOrWhiteSpace(root))
+            {
+                var libraryPath = typeof(Program).Assembly.Location;
+                var library = new FileInfo(libraryPath);
+                root = library.DirectoryName;
+            }
 
             var result = new PhysicalFileProvider(root);
 

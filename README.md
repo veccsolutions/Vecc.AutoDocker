@@ -1,10 +1,11 @@
 # Description
 This solution watches an exposed docker http socket for events and executes a razor template.
 
-* Contains a proof of concept console application
+* Console application
     * Listens for docker events
     * Executes a razor template https://www.frakkingsweet.com/razor-template-rendering/
-    * Writes the results to the console
+    * Writes the results to specified file when the content changes
+    * Executes the specified command when the rendered template content changes
     * Uses Serilog for logging
 * Contains a .NET Core client library for the Docker socket.
     * Implements the primary GET api's
@@ -39,13 +40,9 @@ Configure your security and host settings in the `/src/Vecc.AutoDocker/appsettin
 * https://www.frakkingsweet.com/add-usersecrets-to-net-core-console-application/
 
 # TODO
-* Write template results to a file only when template result changes
-* Configurable template input/output
-* Command execution when template reult changes
-* Configurable command execution
-* Configurable event filtering
-* Documentation
+* Run as a docker container, windows service or console application
 * Examples
     * [HAProxy](https://www.haproxy.org)
     * [NGINX](https://nginx.org/)
     * Any others?
+* Documentation
