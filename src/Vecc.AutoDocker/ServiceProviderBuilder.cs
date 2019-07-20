@@ -37,6 +37,7 @@ namespace Vecc.AutoDocker
             services.AddLogging(builder =>
             {
                 var serilogBuilder = new LoggerConfiguration()
+                    .ReadFrom.Configuration(configuration)
                     .WriteTo.Console(new Serilog.Formatting.Json.JsonFormatter(renderMessage: true));
                 var logger = serilogBuilder.CreateLogger();
 
