@@ -1,0 +1,154 @@
+﻿@using Vecc.AutoDocker.Extensions
+@using Microsoft.Extensions.Logging
+@using System
+@model Vecc.AutoDocker.SwarmInformation
+@{
+    var domainKey = "Vecc.AutoDocker.Proxy.Domain"; // fqdn of the site
+    var redirectToHttpsKey = "Vecc.AutoDocker.Proxy.RedirectToHttps"; // true/false <- false
+    var proxyEnabledKey = "Vecc.AutoDocker.Proxy.Enabled"; // true/false <- false
+    var portKey = "Vecc.AutoDocker.Proxy.Port"; // numeric, required
+    var useSslKey = "Vecc.AutoDocker.Proxy.UseSsl"; // true/false <- false
+    var isProxyKey = "Vecc.AutoDocker.Proxy.IsProxy"; // true/false <- false
+
+    var services = Model.SwarmServices.Where(service => service.Spec.Labels.Any(x => x.Key == proxyEnabledKey && x.Value == "true"));
+    var domainNames = services.SelectMany(service => service.Spec.Labels)
+                              .Where(label => label.Key == domainKey && !string.IsNullOrWhiteSpace(label.Value))
+                              .Select(label => label.Value?.ToLower());
+    var redirectToHttpsDomains = services.Where(service => service.Spec.Labels.Any(x => x.Key == domainKey && !string.IsNullOrWhiteSpace(x.Value)) &&
+                                                           service.Spec.Labels.Any(x => x.Key == redirectToHttpsKey && x.Value?.ToLower() == "true"))
+                                         .SelectMany(x => x.Spec.Labels)
+                                         .Where(x => x.Key == domainKey)
+                                         .Select(x => x.Value?.ToLower());
+    var proxyServices = Model.GetServicesWithLabel(isProxyKey, "true");
+    var proxyService = proxyServices.FirstOrDefault();
+    var myNetworks = proxyService?.Spec.TaskTemplate.Networks.Select(x => x.Target).ToArray() ?? new string[0];
+}
+global
+    ssl-default-bind-options no-sslv3 no-tls-tickets force-tlsv12
+    ssl-default-bind-ciphers EECDH+AESGCM:EDH+AESGCM
+    tune.ssl.default-dh-param 2048
+    maxconn 50000
+
+defaults
+    timeout connect 10s
+    timeout client 30s
+    timeout server 30s
+    log global
+    mode http
+    option httplog
+    maxconn 3000
+    balance roundrobin
+
+frontend stats
+    bind "*:8123" # name ssl crt /run/secrets/haproxy ciphers EECDH+AESGCM:EDH+AESGCM force-tlsv12 no-sslv3
+    stats enable
+    stats refresh 10s
+    stats show-node
+    stats admin if TRUE
+    stats uri  /
+
+@foreach (var domain in domainNames)
+{
+    var domainServices = services.Where(service => service.Spec.Labels.Any(label => label.Key == domainKey && label.Value == domain));
+<text>
+backend backend-@domain
+    http-request set-header X-Real-IP %[src]
+    http-request set-header X-Forwarded-For %[src]
+    http-request set-header X-Forwarded-Ssl off if !{ ssl_fc }
+    http-request set-header X-Forwarded-Ssl on if { ssl_fc }
+    http-request set-header X-Forwarded-Proto http if !{ ssl_fc }
+    http-request set-header X-Forwarded-Proto https if { ssl_fc }
+    http-request set-header X-Forwarded-Port %[dst_port]
+    http-request del-header Proxy
+</text>
+
+    foreach (var domainService in domainServices)
+    {
+<text>
+    # Service: @domainService.Id/@domainService.Spec.Name
+    # ---
+</text>
+        var tasks = Model.SwarmTasks.Where(x => x.ServiceId == domainService.Id);
+        var port = domainService.Spec.Labels.FirstOrDefault(label => label.Key == portKey).Value ?? string.Empty;
+        var useSsl = (domainService.Spec.Labels.FirstOrDefault(label => label.Key == useSslKey).Value == "true")
+            ? "ssl" : string.Empty;
+
+        foreach (var task in tasks)
+        {
+            var node = Model.GetNodeForTask(task);
+            var ips = new List<string>();
+            foreach (var attachment in task.NetworksAttachments.Where(net => myNetworks.Contains(net.Network.Id)))
+            {
+
+                foreach (var address in attachment.Addresses)
+                {
+                    ips.Add(address);
+                }
+            }
+            var ip = ips.First();
+            ip = ip.Substring(0, ip.IndexOf("/"));
+
+            if (!string.IsNullOrWhiteSpace(port))
+            {
+                port = ":" + port;
+            }
+<text>
+    # Task: @task.Id/@task.Name
+    # Node: @node.Id/@node.Description
+    server @task.Id @ip@port @useSsl verify none cookie @task.Id
+</text>
+        }
+    }
+}
+
+frontend http-in
+    bind *:80
+    mode http
+    option httplog
+    option forwardfor
+    option http-server-close
+    option httpclose
+@{
+    @foreach (var domain in domainNames)
+    {
+<text>
+    acl host-@domain  hdr(Host) -i @domain
+</text>
+    }
+
+    foreach (var domain in redirectToHttpsDomains)
+    {
+<text>
+    redirect scheme https code 301 if host-@domain
+</text>
+    }
+
+    foreach (var domain in domainNames.Where(x => !redirectToHttpsDomains.Contains(x))) {
+<text>
+    use_backend backend-@domain if host-@domain
+</text>
+    }
+}
+
+frontend https-in
+    # put all certs in the /run/secrets/haproxy directory.
+    bind *:443 ssl crt /run/secrets/haproxy ciphers EECDH+AESGCM:EDH+AESGCM force-tlsv12 no-sslv3
+    mode http
+    option httplog
+    option forwardfor
+    option http-server-close
+    option httpclose
+@{
+    @foreach (var domain in domainNames)
+    {
+<text>
+    acl host-@domain  hdr(Host) -i @domain
+</text>
+    }
+
+    foreach (var domain in domainNames) {
+<text>
+    use_backend backend-@domain if host-@domain
+</text>
+    }
+}

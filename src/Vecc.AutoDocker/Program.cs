@@ -1,22 +1,29 @@
 ﻿using System;
+using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Vecc.AutoDocker
 {
     internal class Program
     {
-        private static void Main(string[] args)
+        private static async Task Main(string[] args)
         {
-            try
+            var services = ServiceProviderBuilder.BuildServiceProvider(args);
+            var monitor = services.GetRequiredService<Monitor>();
+            await monitor.FirstRunAsync(services);
+            var logger = services.GetRequiredService<ILogger<Program>>();
+
+            while (true)
             {
-                var services = ServiceProviderBuilder.BuildServiceProvider(args);
-                var monitor = services.GetRequiredService<Monitor>();
-                var monitorTask = monitor.MonitorAsync();
-                Console.ReadLine();
-            }
-            catch (Exception e)
-            {
-                Console.WriteLine(e);
+                try
+                {
+                    await monitor.MonitorAsync();
+                }
+                catch (Exception e)
+                {
+                    logger.LogCritical(e, "Unexpected error while monitoring the docker socker socket");
+                }
             }
         }
     }
