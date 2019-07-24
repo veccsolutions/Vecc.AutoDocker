@@ -1,5 +1,4 @@
 ﻿@using Vecc.AutoDocker.Extensions
-@using Microsoft.Extensions.Logging
 @using System
 @model Vecc.AutoDocker.SwarmInformation
 @{
@@ -9,16 +8,18 @@
     var portKey = "Vecc.AutoDocker.Proxy.Port"; // numeric, required
     var useSslKey = "Vecc.AutoDocker.Proxy.UseSsl"; // true/false <- false
     var isProxyKey = "Vecc.AutoDocker.Proxy.IsProxy"; // true/false <- false
+    var logKey = "Vecc.AutoDocker.Proxy.Log"; // the content for the log entry in the config file
 
-    var services = Model.SwarmServices.Where(service => service.Spec.Labels.Any(x => x.Key == proxyEnabledKey && x.Value == "true"));
-    var domainNames = services.SelectMany(service => service.Spec.Labels)
-                              .Where(label => label.Key == domainKey && !string.IsNullOrWhiteSpace(label.Value))
-                              .Select(label => label.Value?.ToLower());
-    var redirectToHttpsDomains = services.Where(service => service.Spec.Labels.Any(x => x.Key == domainKey && !string.IsNullOrWhiteSpace(x.Value)) &&
-                                                           service.Spec.Labels.Any(x => x.Key == redirectToHttpsKey && x.Value?.ToLower() == "true"))
-                                         .SelectMany(x => x.Spec.Labels)
-                                         .Where(x => x.Key == domainKey)
-                                         .Select(x => x.Value?.ToLower());
+    var services = Model.SwarmServices.Where(service => service.Spec.LabelIsEnabled(proxyEnabledKey));
+    var domainNames = services.Select(service => service.Spec.GetLabelValue(domainKey)?.ToLower())
+                              .Where(x => !string.IsNullOrWhiteSpace(x))
+                              .Distinct();
+
+    var redirectToHttpsDomains = services.Where(service => service.Spec.LabelIsEnabled(redirectToHttpsKey))
+                                         .Select(service => service.Spec.GetLabelValue(domainKey)?.ToLower())
+                                         .Where(x => !string.IsNullOrWhiteSpace(x))
+                                         .Distinct();
+
     var proxyServices = Model.GetServicesWithLabel(isProxyKey, "true");
     var proxyService = proxyServices.FirstOrDefault();
     var myNetworks = proxyService?.Spec.TaskTemplate.Networks.Select(x => x.Target).ToArray() ?? new string[0];
@@ -28,6 +29,15 @@ global
     ssl-default-bind-ciphers EECDH+AESGCM:EDH+AESGCM
     tune.ssl.default-dh-param 2048
     maxconn 50000
+@{
+    var logLine = proxyService.Spec.GetLabelValue(logKey);
+    if (!string.IsNullOrWhiteSpace(logLine))
+    {
+<text>
+    log @logLine
+</text>
+    }
+}
 
 defaults
     timeout connect 10s
@@ -49,7 +59,7 @@ frontend stats
 
 @foreach (var domain in domainNames)
 {
-    var domainServices = services.Where(service => service.Spec.Labels.Any(label => label.Key == domainKey && label.Value == domain));
+    var domainServices = services.Where(service => service.Spec.HasMatchingLabelValue(domainKey, domain));
 <text>
 backend backend-@domain
     http-request set-header X-Real-IP %[src]
@@ -69,11 +79,16 @@ backend backend-@domain
     # ---
 </text>
         var tasks = Model.SwarmTasks.Where(x => x.ServiceId == domainService.Id);
-        var port = domainService.Spec.Labels.FirstOrDefault(label => label.Key == portKey).Value ?? string.Empty;
-        var useSsl = (domainService.Spec.Labels.FirstOrDefault(label => label.Key == useSslKey).Value == "true")
+        var port = domainService.Spec.GetLabelValue(portKey) ?? string.Empty;
+        var useSsl = domainService.Spec.LabelIsEnabled(useSslKey)
             ? "ssl" : string.Empty;
 
-        foreach (var task in tasks)
+        if (!string.IsNullOrWhiteSpace(port))
+        {
+            port = ":" + port;
+        }
+
+        foreach (var task in tasks.Where(x => x.Status.State == Vecc.AutoDocker.Client.Docker.Swarms.TaskState.Running))
         {
             var node = Model.GetNodeForTask(task);
             var ips = new List<string>();
@@ -88,10 +103,6 @@ backend backend-@domain
             var ip = ips.First();
             ip = ip.Substring(0, ip.IndexOf("/"));
 
-            if (!string.IsNullOrWhiteSpace(port))
-            {
-                port = ":" + port;
-            }
 <text>
     # Task: @task.Id/@task.Name
     # Node: @node.Id/@node.Description
@@ -104,10 +115,17 @@ backend backend-@domain
 frontend http-in
     bind *:80
     mode http
-    option httplog
     option forwardfor
     option http-server-close
     option httpclose
+
+    # snazzy log stuff
+#    http-request capture req.hdr(Host) len 20
+#    http-request capture req.hdr(User-Agent) len 100
+#    http-request capture ssl_fc_protocol len 10
+#    declare capture response len 50
+#    http-response capture res.hdr(Content-Type) id 1
+
 @{
     @foreach (var domain in domainNames)
     {
@@ -123,7 +141,8 @@ frontend http-in
 </text>
     }
 
-    foreach (var domain in domainNames.Where(x => !redirectToHttpsDomains.Contains(x))) {
+    foreach (var domain in domainNames.Where(x => !redirectToHttpsDomains.Contains(x)))
+    {
 <text>
     use_backend backend-@domain if host-@domain
 </text>
@@ -134,10 +153,17 @@ frontend https-in
     # put all certs in the /run/secrets/haproxy directory.
     bind *:443 ssl crt /run/secrets/haproxy ciphers EECDH+AESGCM:EDH+AESGCM force-tlsv12 no-sslv3
     mode http
-    option httplog
     option forwardfor
     option http-server-close
     option httpclose
+
+    # snazzy log stuff
+#    http-request capture req.hdr(Host) len 20
+#    http-request capture req.hdr(User-Agent) len 100
+#    http-request capture ssl_fc_protocol len 10
+#    declare capture response len 50
+#    http-response capture res.hdr(Content-Type) id 1
+
 @{
     @foreach (var domain in domainNames)
     {
@@ -146,7 +172,8 @@ frontend https-in
 </text>
     }
 
-    foreach (var domain in domainNames) {
+    foreach (var domain in domainNames)
+    {
 <text>
     use_backend backend-@domain if host-@domain
 </text>
