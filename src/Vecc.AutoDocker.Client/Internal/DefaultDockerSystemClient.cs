@@ -29,7 +29,7 @@ namespace Vecc.AutoDocker.Client.Internal
 
             response.EnsureSuccessStatusCode();
 
-            var result = await response.Content.ReadAsAsync<DiskUsage>();
+            var result = await response.Content.ReadAsAsync<DiskUsage>(this._logger);
 
             return result;
         }
@@ -40,7 +40,7 @@ namespace Vecc.AutoDocker.Client.Internal
 
             response.EnsureSuccessStatusCode();
 
-            var result = await response.Content.ReadAsAsync<Info>();
+            var result = await response.Content.ReadAsAsync<Info>(this._logger);
 
             return result;
         }
@@ -51,7 +51,7 @@ namespace Vecc.AutoDocker.Client.Internal
 
             response.EnsureSuccessStatusCode();
 
-            var result = await response.Content.ReadAsAsync<SystemVersion>();
+            var result = await response.Content.ReadAsAsync<SystemVersion>(this._logger);
 
             return result;
         }
@@ -93,6 +93,7 @@ namespace Vecc.AutoDocker.Client.Internal
                             string line;
                             while ((line = reader.ReadLine()) != null)
                             {
+                                this._logger.LogTrace("Received Content: {@content}", line);
                                 var message = JsonConvert.DeserializeObject<Message>(line);
                                 var services = (IDockerClients)this._serviceProvider.GetService(typeof(IDockerClients));
 

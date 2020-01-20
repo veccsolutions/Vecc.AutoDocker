@@ -2,15 +2,19 @@
 using System.Net.Http;
 using System.Threading.Tasks;
 using System.Web;
+using Microsoft.Extensions.Logging;
 using Vecc.AutoDocker.Client.Docker;
 
 namespace Vecc.AutoDocker.Client.Internal
 {
     public class DefaultDockerContainerClient : DefaultDockerClient, IDockerContainerClient
     {
-        public DefaultDockerContainerClient(HttpClient client)
+        private readonly ILogger<DefaultDockerContainerClient> _logger;
+
+        public DefaultDockerContainerClient(HttpClient client, ILogger<DefaultDockerContainerClient> logger)
             : base(client)
         {
+            this._logger = logger;
         }
 
         public async Task<Container[]> GetContainersAsync(ContainerListOptions options = null)
@@ -44,7 +48,7 @@ namespace Vecc.AutoDocker.Client.Internal
 
             response.EnsureSuccessStatusCode();
 
-            var result = await response.Content.ReadAsAsync<Container[]>();
+            var result = await response.Content.ReadAsAsync<Container[]>(this._logger);
 
             return result;
         }
@@ -54,7 +58,7 @@ namespace Vecc.AutoDocker.Client.Internal
             var uri = $"/containers/" + HttpUtility.UrlEncode(id) + "/json";
             var response = await this.Client.GetAsync(uri);
             response.EnsureSuccessStatusCode();
-            var result = await response.Content.ReadAsAsync<ContainerJSON>();
+            var result = await response.Content.ReadAsAsync<ContainerJSON>(this._logger);
             return result;
         }
 

@@ -1,15 +1,19 @@
 ﻿using System.Net.Http;
 using System.Threading.Tasks;
 using System.Web;
+using Microsoft.Extensions.Logging;
 using Vecc.AutoDocker.Client.Docker.Swarms;
 
 namespace Vecc.AutoDocker.Client.Internal
 {
     public class DefaultDockerServiceClient : DefaultDockerClient, IDockerServiceClient
     {
-        public DefaultDockerServiceClient(HttpClient client)
+        private readonly ILogger<DefaultDockerServiceClient> _logger;
+
+        public DefaultDockerServiceClient(HttpClient client, ILogger<DefaultDockerServiceClient> logger)
             : base(client)
         {
+            this._logger = logger;
         }
 
         public async Task<Service[]> GetServicesAsync(string filters = "")
@@ -26,7 +30,7 @@ namespace Vecc.AutoDocker.Client.Internal
 
             response.EnsureSuccessStatusCode();
 
-            var result = await response.Content.ReadAsAsync<Service[]>();
+            var result = await response.Content.ReadAsAsync<Service[]>(this._logger);
 
             return result;
         }
@@ -41,7 +45,7 @@ namespace Vecc.AutoDocker.Client.Internal
             var response = await this.Client.GetAsync(uri);
             response.EnsureSuccessStatusCode();
 
-            var result = await response.Content.ReadAsAsync<Service>();
+            var result = await response.Content.ReadAsAsync<Service>(this._logger);
 
             return result;
         }

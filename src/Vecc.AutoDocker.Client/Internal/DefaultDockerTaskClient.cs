@@ -3,15 +3,19 @@ using System.Linq;
 using System.Net.Http;
 using System.Threading.Tasks;
 using System.Web;
+using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 
 namespace Vecc.AutoDocker.Client.Internal
 {
     public class DefaultDockerTaskClient : DefaultDockerClient, IDockerTaskClient
     {
-        public DefaultDockerTaskClient(HttpClient client)
+        private readonly ILogger<DefaultDockerTaskClient> _logger;
+
+        public DefaultDockerTaskClient(HttpClient client, ILogger<DefaultDockerTaskClient> logger)
             : base(client)
         {
+            this._logger = logger;
         }
 
         public Task<Docker.Swarms.Task[]> GetTasksAsync() => this.GetTasksAsync(null);
@@ -69,7 +73,7 @@ namespace Vecc.AutoDocker.Client.Internal
 
             response.EnsureSuccessStatusCode();
 
-            var result = await response.Content.ReadAsAsync<Docker.Swarms.Task[]>();
+            var result = await response.Content.ReadAsAsync<Docker.Swarms.Task[]>(this._logger);
 
             return result;
         }
@@ -79,7 +83,7 @@ namespace Vecc.AutoDocker.Client.Internal
             var uri = $"/tasks/" + HttpUtility.UrlEncode(id);
             var response = await this.Client.GetAsync(uri);
             response.EnsureSuccessStatusCode();
-            var result = await response.Content.ReadAsAsync<Docker.Swarms.Task>();
+            var result = await response.Content.ReadAsAsync<Docker.Swarms.Task>(this._logger);
             return result;
         }
     }
